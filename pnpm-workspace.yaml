@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - services/*
+  - frontend
+
+# Permite el script de instalación de esbuild (lo usa Vite). Ya no hay módulos nativos de base de datos.
+onlyBuiltDependencies:
+  - esbuild

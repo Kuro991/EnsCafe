@@ -1,0 +1,12 @@
+{
+  "name": "@enscafe/catalog",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --disable-warning=ExperimentalWarning --watch index.js",
+    "start": "node --disable-warning=ExperimentalWarning index.js"
+  },
+  "dependencies": {
+    "@enscafe/common": "workspace:*"
+  }
+}

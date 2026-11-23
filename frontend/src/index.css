@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Paleta "niebla del Pacífico": gris azulado claro, tinta verde-petróleo y ámbar tostado para las estrellas */
+    --background: 180 14% 96%;
+    --foreground: 192 45% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 192 45% 11%;
+    --primary: 180 82% 19%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 180 18% 90%;
+    --secondary-foreground: 192 45% 14%;
+    --muted: 180 14% 92%;
+    --muted-foreground: 192 14% 36%;
+    --destructive: 4 72% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 180 14% 84%;
+    --input: 180 14% 80%;
+    --ring: 180 82% 24%;
+    --star: 36 82% 46%;
+    --radius: 0.6rem;
+  }
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-sans antialiased; }
+  h1, h2, h3 { @apply font-display tracking-tight; }
+}
+
+/* Marcador de cafetería: gota con taza */
+.cafe-pin {
+  width: 100%; height: 100%;
+  background: hsl(var(--primary));
+  border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: grid; place-items: center;
+  box-shadow: 0 2px 6px rgb(0 0 0 / .35);
+  transition: background .15s;
+}
+.cafe-pin svg { transform: rotate(45deg); width: 55%; height: 55%; }
+.cafe-pin.is-active { background: hsl(var(--star)); }
+.leaflet-container { font-family: inherit; }
+.leaflet-popup-content { margin: 12px 14px; }

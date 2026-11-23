@@ -1,0 +1,17 @@
+{
+  "name": "enscafe",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n auth,catalog,reviews,gateway,web -c blue,green,yellow,magenta,cyan \"pnpm --filter @enscafe/auth dev\" \"pnpm --filter @enscafe/catalog dev\" \"pnpm --filter @enscafe/reviews dev\" \"pnpm --filter @enscafe/gateway dev\" \"pnpm --filter @enscafe/frontend dev\"",
+    "dev:api": "concurrently -k -n auth,catalog,reviews,gateway -c blue,green,yellow,magenta \"pnpm --filter @enscafe/auth dev\" \"pnpm --filter @enscafe/catalog dev\" \"pnpm --filter @enscafe/reviews dev\" \"pnpm --filter @enscafe/gateway dev\"",
+    "build": "pnpm --filter @enscafe/frontend build",
+    "reset-db": "node -e \"require('fs').rmSync('data',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
