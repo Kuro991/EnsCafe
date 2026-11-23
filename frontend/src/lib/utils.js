@@ -5,7 +5,7 @@ export const cn = (...inputs) => twMerge(clsx(inputs));
 
 export function formatDate(s) {
   if (!s) return '';
-  const d = new Date(s.replace(' ', 'T') + 'Z'); // SQLite guarda UTC
+  const d = new Date(s); // PostgreSQL devuelve fechas ISO 8601 (timestamptz)
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

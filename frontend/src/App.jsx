@@ -9,6 +9,9 @@ import AuthPage from '@/pages/AuthPage';
 import Profile from '@/pages/Profile';
 import Top from '@/pages/Top';
 import Admin from '@/pages/Admin';
+import ForgotPassword from '@/pages/ForgotPassword';
+import ResetPassword from '@/pages/ResetPassword';
+import VerifyEmail from '@/pages/VerifyEmail';
 import NotFound from '@/pages/NotFound';
 
 export default function App() {
@@ -22,6 +25,9 @@ export default function App() {
         <Route path="top" element={<Top />} />
         <Route path="acceso" element={<AuthPage mode="login" />} />
         <Route path="registro" element={<AuthPage mode="register" />} />
+        <Route path="olvide" element={<ForgotPassword />} />
+        <Route path="restablecer" element={<ResetPassword />} />
+        <Route path="verificar" element={<VerifyEmail />} />
         <Route path="perfil" element={<RequireAuth><Profile /></RequireAuth>} />
         <Route path="admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
         <Route path="*" element={<NotFound />} />

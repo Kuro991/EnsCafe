@@ -43,7 +43,7 @@ function NameForm() {
 }
 
 export default function Profile() {
-  const { user } = useAuth();
+  const { user, logoutAll } = useAuth();
   const [saving, setSaving] = useState(false);
   const { data, error, loading, reload } = useQuery(async (signal) => {
     const [t, m] = await Promise.all([api('/top5/me', { signal }), api('/reviews/mine', { signal })]);
@@ -63,7 +63,13 @@ export default function Profile() {
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-center gap-3"><h1 className="break-words text-3xl font-bold">Mi perfil</h1><Badge variant="secondary">{user.email}</Badge></div>
-      <Card><CardHeader><CardTitle>Datos de la cuenta</CardTitle></CardHeader><CardContent><NameForm /></CardContent></Card>
+      <Card><CardHeader><CardTitle>Datos de la cuenta</CardTitle></CardHeader><CardContent className="space-y-4">
+        <NameForm />
+        <div className="border-t pt-4">
+          <Button variant="outline" size="sm" onClick={() => logoutAll().catch((e) => toast.error(e.message))}>Cerrar sesión en todos mis dispositivos</Button>
+          <p className="mt-1 text-xs text-muted-foreground">Úsalo si dejaste tu sesión abierta en un equipo que no es tuyo.</p>
+        </div>
+      </CardContent></Card>
 
       {loading && !data ? <Skeleton className="h-56" />
         : error && !data ? <ErrorState message={error.message} onRetry={reload} />

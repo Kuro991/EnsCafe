@@ -1,31 +1,33 @@
-// Microservicio de RESEÑAS y TOP 5 (puerto 4003, base reviews.db)
+// Microservicio de RESEÑAS y TOP 5 (esquema "reviews" en PostgreSQL)
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  z, express, createApp, start, openDb, wrap, parse, optText, num, HttpError, isUnique,
-  pageParams, requireAuth, requireAdmin, callService, URLS,
+  z, express, createApp, start, openDb, migrate, wrap, parse, optText, num, HttpError, isUnique,
+  pageParams, toId, requireAuth, requireAdmin, callService, URLS, INTERNAL_HOST,
 } from '@enscafe/common';
 
 const db = openDb('reviews');
-db.exec(`
-CREATE TABLE IF NOT EXISTS reviews(
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  cafe_id INTEGER NOT NULL,
-  user_id INTEGER NOT NULL,
-  user_name TEXT NOT NULL,
-  rating INTEGER NOT NULL CHECK(rating BETWEEN 0 AND 5),
-  comment TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'published' CHECK(status IN ('published','hidden')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(cafe_id, user_id)            -- una reseña por usuario y cafetería (anti-duplicados)
-);
-CREATE TABLE IF NOT EXISTS top5(
-  user_id INTEGER NOT NULL,
-  cafe_id INTEGER NOT NULL,
-  position INTEGER NOT NULL CHECK(position BETWEEN 1 AND 5),
-  added_at TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY(user_id, cafe_id),      -- sin cafeterías repetidas
-  UNIQUE(user_id, position)           -- sin posiciones repetidas
-);`);
+const MIGRATIONS = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
+
+// Mantiene el promedio en catalog-service (consistencia eventual: si falla, se resincroniza al reiniciar)
+async function pushStats(cafeId) {
+  try {
+    const s = await db.get(`SELECT COALESCE(AVG(rating), 0)::float8 AS avg, COUNT(*)::int AS n
+                            FROM reviews.reviews WHERE cafe_id = $1 AND status = 'published'`, [cafeId]);
+    await callService(`${URLS.catalog}/internal/cafes/${cafeId}/rating`, { method: 'PUT', internal: true, body: { avg: s.avg, count: s.n } });
+  } catch {
+    console.warn(`[reviews] no se pudo actualizar el promedio de la cafetería ${cafeId}`);
+  }
+}
+
+async function init() {
+  if (process.env.AUTO_MIGRATE !== 'false') await migrate(db, 'reviews', MIGRATIONS);
+  // Al iniciar, resincroniza promedios por si catalog estuvo caído cuando se publicó una reseña
+  setTimeout(async () => {
+    try { for (const { cafe_id } of await db.all('SELECT DISTINCT cafe_id FROM reviews.reviews')) await pushStats(cafe_id); }
+    catch (e) { console.warn('[reviews] resincronización omitida:', e.message); }
+  }, 3000);
+}
 
 const toReview = (r) => ({
   id: r.id, cafeId: r.cafe_id, userId: r.user_id, userName: r.user_name, rating: r.rating,
@@ -40,28 +42,15 @@ const reviewFields = {
 const createSchema = z.object({ cafeId: num('La cafetería', { min: 1, int: true }), ...reviewFields });
 const updateSchema = z.object(reviewFields);
 
-// Mantiene el promedio en catalog-service (consistencia eventual: si falla, se resincroniza al reiniciar)
-async function pushStats(cafeId) {
-  const s = db.prepare(`SELECT COALESCE(AVG(rating),0) avg, COUNT(*) n FROM reviews WHERE cafe_id=? AND status='published'`).get(cafeId);
-  try {
-    await callService(`${URLS.catalog}/internal/cafes/${cafeId}/rating`, { method: 'PUT', internal: true, body: { avg: s.avg, count: s.n } });
-  } catch (e) {
-    console.warn(`[reviews] no se pudo actualizar el promedio de la cafetería ${cafeId}`);
-  }
-}
 async function assertCafe(cafeId) {
   const r = await callService(`${URLS.catalog}/cafes/${cafeId}`);
   if (r.status === 404 || (r.ok && !['active', 'closed'].includes(r.data?.cafe?.status)))
     throw new HttpError(404, 'La cafetería no existe', 'CAFE_NOT_FOUND');
   if (!r.ok) throw new HttpError(503, 'No se pudo verificar la cafetería. Intenta de nuevo', 'SERVICE_UNAVAILABLE');
 }
-const parseId = (v) => {
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 1) throw new HttpError(404, 'Reseña no encontrada', 'NOT_FOUND');
-  return n;
-};
-const getReview = (id) => {
-  const row = db.prepare('SELECT * FROM reviews WHERE id=?').get(id);
+const getReview = async (rawId) => {
+  const id = toId(rawId);
+  const row = id && (await db.get('SELECT * FROM reviews.reviews WHERE id = $1', [id]));
   if (!row) throw new HttpError(404, 'Reseña no encontrada', 'NOT_FOUND');
   return row;
 };
@@ -70,75 +59,75 @@ const r = express.Router();
 
 r.get('/', wrap(async (req, res) => {
   const { page, limit, offset } = pageParams(req.query, { defLimit: 10, maxLimit: 50 });
-  const where = [];
   const params = [];
+  const p = (v) => { params.push(v); return `$${params.length}`; };
+  const where = [];
   // Solo el administrador puede ver reseñas ocultas
   const st = req.query.status;
   if (st === 'hidden' || st === 'all') {
     if (req.user?.role !== 'admin') throw new HttpError(403, 'No tienes permisos para esta acción', 'FORBIDDEN');
-    if (st === 'hidden') where.push(`status='hidden'`);
-  } else where.push(`status='published'`);
-  const cafeId = Number(req.query.cafeId);
-  if (req.query.cafeId !== undefined) { where.push('cafe_id=?'); params.push(Number.isInteger(cafeId) ? cafeId : -1); }
+    if (st === 'hidden') where.push(`status = 'hidden'`);
+  } else where.push(`status = 'published'`);
+  if (req.query.cafeId !== undefined) where.push(`cafe_id = ${p(toId(req.query.cafeId) ?? -1)}`);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const total = db.prepare(`SELECT COUNT(*) n FROM reviews ${w}`).get(...params).n;
-  const rows = db.prepare(`SELECT * FROM reviews ${w} ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`).all(...params, limit, offset);
+  const { n: total } = await db.get(`SELECT COUNT(*)::int AS n FROM reviews.reviews ${w}`, params);
+  const rows = await db.all(`SELECT * FROM reviews.reviews ${w} ORDER BY updated_at DESC, id DESC LIMIT ${p(limit)} OFFSET ${p(offset)}`, params);
   res.json({ items: rows.map(toReview), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
 }));
 
 r.get('/mine', requireAuth, wrap(async (req, res) => {
-  const rows = db.prepare('SELECT * FROM reviews WHERE user_id=? ORDER BY updated_at DESC, id DESC LIMIT 200').all(req.user.id);
+  const rows = await db.all('SELECT * FROM reviews.reviews WHERE user_id = $1 ORDER BY updated_at DESC, id DESC LIMIT 200', [req.user.id]);
   res.json({ items: rows.map(toReview) });
 }));
 
 r.post('/', requireAuth, wrap(async (req, res) => {
   const d = parse(createSchema, req.body);
   await assertCafe(d.cafeId);
-  let id;
+  let row;
   try {
-    id = db.prepare('INSERT INTO reviews(cafe_id,user_id,user_name,rating,comment) VALUES (?,?,?,?,?)')
-      .run(d.cafeId, req.user.id, req.user.name, d.rating, d.comment).lastInsertRowid;
+    row = await db.get('INSERT INTO reviews.reviews(cafe_id, user_id, user_name, rating, comment) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [d.cafeId, req.user.id, req.user.name, d.rating, d.comment]);
   } catch (e) {
     if (isUnique(e)) throw new HttpError(409, 'Ya reseñaste esta cafetería. Edita tu reseña existente', 'DUPLICATE');
     throw e;
   }
   await pushStats(d.cafeId);
-  res.status(201).json({ review: toReview(getReview(id)) });
+  res.status(201).json({ review: toReview(row) });
 }));
 
 r.put('/:id', requireAuth, wrap(async (req, res) => {
-  const row = getReview(parseId(req.params.id));
+  const row = await getReview(req.params.id);
   if (row.user_id !== req.user.id) throw new HttpError(403, 'Solo puedes editar tus propias reseñas', 'FORBIDDEN');
   if (row.status === 'hidden') throw new HttpError(409, 'Esta reseña fue ocultada por moderación y no se puede editar', 'HIDDEN');
   const d = parse(updateSchema, req.body);
-  db.prepare(`UPDATE reviews SET rating=?, comment=?, updated_at=datetime('now') WHERE id=?`).run(d.rating, d.comment, row.id);
+  const updated = await db.get('UPDATE reviews.reviews SET rating = $1, comment = $2, updated_at = now() WHERE id = $3 RETURNING *', [d.rating, d.comment, row.id]);
   await pushStats(row.cafe_id);
-  res.json({ review: toReview(getReview(row.id)) });
+  res.json({ review: toReview(updated) });
 }));
 
 r.delete('/:id', requireAuth, wrap(async (req, res) => {
-  const row = getReview(parseId(req.params.id));
+  const row = await getReview(req.params.id);
   if (row.user_id !== req.user.id && req.user.role !== 'admin')
     throw new HttpError(403, 'Solo puedes eliminar tus propias reseñas', 'FORBIDDEN');
-  db.prepare('DELETE FROM reviews WHERE id=?').run(row.id);
+  await db.run('DELETE FROM reviews.reviews WHERE id = $1', [row.id]);
   await pushStats(row.cafe_id);
   res.status(204).end();
 }));
 
 r.patch('/:id/moderate', ...requireAdmin, wrap(async (req, res) => {
-  const row = getReview(parseId(req.params.id));
+  const row = await getReview(req.params.id);
   const { status } = parse(z.object({ status: z.enum(['published', 'hidden'], { errorMap: () => ({ message: 'Estado no válido' }) }) }), req.body);
-  db.prepare(`UPDATE reviews SET status=? WHERE id=?`).run(status, row.id);
+  const updated = await db.get('UPDATE reviews.reviews SET status = $1 WHERE id = $2 RETURNING *', [status, row.id]);
   await pushStats(row.cafe_id);
-  res.json({ review: toReview(getReview(row.id)) });
+  res.json({ review: toReview(updated) });
 }));
 
 /* ---------- Top 5 ---------- */
 const top = express.Router();
-const listTop = (userId) => db.prepare('SELECT cafe_id FROM top5 WHERE user_id=? ORDER BY position').all(userId).map((x) => x.cafe_id);
+const listTop = async (userId) => (await db.all('SELECT cafe_id FROM reviews.top5 WHERE user_id = $1 ORDER BY position', [userId])).map((x) => x.cafe_id);
 
-top.get('/me', requireAuth, wrap(async (req, res) => res.json({ cafeIds: listTop(req.user.id) })));
-top.get('/user/:id', wrap(async (req, res) => res.json({ cafeIds: listTop(Number(req.params.id) || -1) })));
+top.get('/me', requireAuth, wrap(async (req, res) => res.json({ cafeIds: await listTop(req.user.id) })));
+top.get('/user/:id', wrap(async (req, res) => res.json({ cafeIds: await listTop(toId(req.params.id) ?? -1) })));
 
 // Reemplaza la lista completa de forma atómica: sirve para agregar, quitar y reordenar, y es idempotente (doble clic seguro)
 top.put('/me', requireAuth, wrap(async (req, res) => {
@@ -154,20 +143,15 @@ top.put('/me', requireAuth, wrap(async (req, res) => {
     if (c.data.items.filter((x) => ['active', 'closed'].includes(x.status)).length !== cafeIds.length)
       throw new HttpError(422, 'Alguna de las cafeterías ya no existe', 'VALIDATION');
   }
-  db.transaction(() => {
-    db.prepare('DELETE FROM top5 WHERE user_id=?').run(req.user.id);
-    const ins = db.prepare('INSERT INTO top5(user_id,cafe_id,position) VALUES (?,?,?)');
-    cafeIds.forEach((id, i) => ins.run(req.user.id, id, i + 1));
-  })();
-  res.json({ cafeIds: listTop(req.user.id) });
+  await db.tx(async (t) => {
+    await t.run('DELETE FROM reviews.top5 WHERE user_id = $1', [req.user.id]);
+    for (const [i, id] of cafeIds.entries())
+      await t.run('INSERT INTO reviews.top5(user_id, cafe_id, position) VALUES ($1,$2,$3)', [req.user.id, id, i + 1]);
+  });
+  res.json({ cafeIds: await listTop(req.user.id) });
 }));
 
-const app = createApp();
+const app = createApp({ db });
 app.use('/reviews', r);
 app.use('/top5', top);
-start(app, 'reviews', Number(process.env.REVIEWS_PORT || 4003));
-
-// Al iniciar, resincroniza promedios por si catalog estuvo caído cuando se publicó una reseña
-setTimeout(async () => {
-  for (const { cafe_id } of db.prepare('SELECT DISTINCT cafe_id FROM reviews').all()) await pushStats(cafe_id);
-}, 3000);
+start(app, 'reviews', Number(process.env.REVIEWS_PORT || 4003), { init, host: INTERNAL_HOST });

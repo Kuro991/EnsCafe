@@ -2,16 +2,18 @@
   "name": "enscafe",
   "private": true,
   "type": "module",
-  "engines": {
-    "node": ">=22.13"
-  },
+  "engines": { "node": ">=22.13" },
   "scripts": {
     "dev": "concurrently -k -n auth,catalog,reviews,gateway,web -c blue,green,yellow,magenta,cyan \"pnpm --filter @enscafe/auth dev\" \"pnpm --filter @enscafe/catalog dev\" \"pnpm --filter @enscafe/reviews dev\" \"pnpm --filter @enscafe/gateway dev\" \"pnpm --filter @enscafe/frontend dev\"",
     "dev:api": "concurrently -k -n auth,catalog,reviews,gateway -c blue,green,yellow,magenta \"pnpm --filter @enscafe/auth dev\" \"pnpm --filter @enscafe/catalog dev\" \"pnpm --filter @enscafe/reviews dev\" \"pnpm --filter @enscafe/gateway dev\"",
+    "start:api": "node scripts/start-all.mjs",
     "build": "pnpm --filter @enscafe/frontend build",
-    "reset-db": "node -e \"require('fs').rmSync('data',{recursive:true,force:true})\""
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @enscafe/common migrate",
+    "db:reset": "pnpm --filter @enscafe/common reset",
+    "db:seed": "pnpm --filter @enscafe/catalog seed",
+    "admin:create": "pnpm --filter @enscafe/auth create-admin"
   },
-  "devDependencies": {
-    "concurrently": "^9.0.1"
-  }
+  "devDependencies": { "concurrently": "^9.0.1" }
 }

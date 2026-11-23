@@ -4,5 +4,8 @@ packages:
   - frontend
 
 # Permite el script de instalación de esbuild (lo usa Vite). Ya no hay módulos nativos de base de datos.
+allowBuilds:
+  esbuild: set this to true or false
+
 onlyBuiltDependencies:
   - esbuild

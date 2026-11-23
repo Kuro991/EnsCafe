@@ -12,3 +12,14 @@ export const SEED = [
   ['Chapultepec Roasters', 'Calle Chapultepec 90, Chapultepec', 'Cafetería con mirador y tostado de origen único.', 'Mié-Lun 9:00-19:00', '646 555 0109', 31.8721, -116.6085, 'Chapultepec'],
   ['Playitas Espresso', 'Calle Playitas 15, Playitas', 'Café para llevar cerca de la playa.', 'Lun-Dom 7:00-14:00', '646 555 0110', 31.8473, -116.6112, 'Playitas'],
 ];
+
+// Inserta las cafeterías de ejemplo solo si la tabla está vacía
+export async function seedIfEmpty(db) {
+  const { n } = await db.get('SELECT COUNT(*)::int AS n FROM catalog.cafes');
+  if (n > 0) return false;
+  await db.tx(async (t) => {
+    for (const s of SEED)
+      await t.run(`INSERT INTO catalog.cafes(name, address, description, schedule, phone, lat, lng, zone) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, s);
+  });
+  return true;
+}

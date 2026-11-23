@@ -17,6 +17,7 @@ import { CafeMap } from '@/components/CafeMap';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { EmptyState, ErrorState } from '@/components/States';
 import { Field } from '@/components/Field';
+import Turnstile, { SITE_KEY } from '@/components/Turnstile';
 import NotFound from '@/pages/NotFound';
 
 const MAX = 1000;
@@ -33,6 +34,8 @@ function ReviewForm({ cafeId, userId, existing, onChanged }) {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const [captcha, setCaptcha] = useState('');
+  const ts = useRef(null);
 
   useEffect(() => {
     if (existing) return;
@@ -44,11 +47,12 @@ function ReviewForm({ cafeId, userId, existing, onChanged }) {
     if (busyRef.current) return; // doble clic
     if (form.rating === null) { setErrors({ rating: 'Selecciona una puntuación de 0 a 5' }); return; }
     if (form.comment.length > MAX) { setErrors({ comment: `El comentario no puede superar ${MAX} caracteres` }); return; }
+    if (!existing && SITE_KEY && !captcha) { setErrors({ captcha: 'Completa la verificación anti-robots' }); return; }
     busyRef.current = true; setBusy(true); setErrors({});
     try {
       const body = { rating: form.rating, comment: form.comment.trim() };
       if (existing) await api(`/reviews/${existing.id}`, { method: 'PUT', body });
-      else await api('/reviews', { method: 'POST', body: { cafeId, ...body } });
+      else await api('/reviews', { method: 'POST', body: { cafeId, ...body }, captcha });
       try { localStorage.removeItem(draftKey); } catch { /* noop */ }
       toast.success(existing ? 'Reseña actualizada' : 'Reseña publicada');
       onChanged();
@@ -56,7 +60,7 @@ function ReviewForm({ cafeId, userId, existing, onChanged }) {
       if (err.fields) setErrors(err.fields);
       else toast.error(err.message);
       if (err.code === 'DUPLICATE') onChanged(); // ya existía: pasa a modo edición
-    } finally { busyRef.current = false; setBusy(false); }
+    } finally { busyRef.current = false; setBusy(false); ts.current?.reset(); }
   };
 
   const remove = async () => {
@@ -76,6 +80,9 @@ function ReviewForm({ cafeId, userId, existing, onChanged }) {
         <Textarea id="comment" value={form.comment} maxLength={MAX} disabled={busy} aria-invalid={!!errors.comment}
           onChange={(e) => setForm({ ...form, comment: e.target.value })} placeholder="¿Qué tal el café, el ambiente, el servicio?" />
       </Field>
+      {!existing && (
+        <Field id="captcha" label="" error={errors.captcha}><Turnstile ref={ts} onToken={setCaptcha} action="review" /></Field>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" loading={busy}>{existing ? 'Guardar cambios' : 'Publicar reseña'}</Button>
         {existing && <Button type="button" variant="outline" disabled={busy} onClick={remove}>Eliminar reseña</Button>}

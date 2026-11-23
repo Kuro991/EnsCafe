@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --disable-warning=ExperimentalWarning --watch index.js",
-    "start": "node --disable-warning=ExperimentalWarning index.js"
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "@enscafe/common": "workspace:*",
-    "bcryptjs": "^2.4.3"
+    "bcryptjs": "^2.4.3",
+    "nodemailer": "^10.6.1"
   }
 }

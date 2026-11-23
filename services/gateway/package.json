@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --disable-warning=ExperimentalWarning --watch index.js",
-    "start": "node --disable-warning=ExperimentalWarning index.js"
+    "dev": "node --watch index.js",
+    "start": "node index.js"
   },
   "dependencies": {
     "@enscafe/common": "workspace:*",
