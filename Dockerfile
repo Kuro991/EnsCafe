@@ -9,7 +9,7 @@ COPY packages ./packages
 COPY services ./services
 COPY scripts ./scripts
 # Cuando hagas commit de pnpm-lock.yaml, cámbialo a: pnpm install --prod --frozen-lockfile ...
-RUN pnpm install --prod --no-frozen-lockfile --filter "./packages/*" --filter "./services/*"
+RUN pnpm install --prod --frozen-lockfile --filter "./packages/*" --filter "./services/*"
 USER node
 EXPOSE 4000
 CMD ["node", "scripts/start-all.mjs"]
